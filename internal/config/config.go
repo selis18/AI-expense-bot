@@ -1,4 +1,3 @@
-// Package config loads and validates application settings from the environment.
 package config
 
 import (
@@ -9,7 +8,6 @@ import (
 	"time"
 )
 
-// Config contains the settings required to start the application.
 type Config struct {
 	DatabaseURL   string
 	HTTPAddr      string
@@ -21,7 +19,6 @@ type Config struct {
 	LLMTimeout    time.Duration
 }
 
-// Load reads environment variables and applies defaults for optional settings.
 func Load() (Config, error) {
 	c := Config{
 		DatabaseURL:   os.Getenv("DATABASE_URL"),

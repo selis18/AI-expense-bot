@@ -1,4 +1,3 @@
-// Package store persists expenses and processing results in PostgreSQL.
 package store
 
 import (
@@ -14,16 +13,13 @@ import (
 //go:embed schema.sql
 var schema string
 
-// Store uses a shared connection pool owned by the application.
 type Store struct{ Pool *pgxpool.Pool }
 
-// Migrate applies the initial schema once, under a transaction-scoped lock.
 func (s *Store) Migrate(ctx context.Context) error {
 	tx, err := s.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	// Rollback is a no-op after a successful commit.
 	defer tx.Rollback(ctx)
 	if _, err = tx.Exec(ctx, "SELECT pg_advisory_xact_lock(57245001)"); err != nil {
 		return err
@@ -43,13 +39,11 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return tx.Commit(ctx)
 }
 
-// Register creates a Telegram user or refreshes their display name.
 func (s *Store) Register(ctx context.Context, userID int64, name string) error {
 	_, err := s.Pool.Exec(ctx, "INSERT INTO users(id,display_name) VALUES($1,$2) ON CONFLICT(id) DO UPDATE SET display_name=EXCLUDED.display_name", userID, name)
 	return err
 }
 
-// Result retrieves a saved response only for its owner; the bool reports a match.
 func (s *Store) Result(ctx context.Context, updateID, userID int64) (string, bool, error) {
 	var result string
 	err := s.Pool.QueryRow(ctx, "SELECT result FROM processed_updates WHERE update_id=$1 AND user_id=$2", updateID, userID).Scan(&result)
@@ -59,8 +53,6 @@ func (s *Store) Result(ctx context.Context, updateID, userID int64) (string, boo
 	return result, err == nil, err
 }
 
-// Save atomically records an optional expense and the response for this update.
-// The update ID is the operation key: block 1 permits at most one mutation per message.
 func (s *Store) Save(ctx context.Context, updateID, userID int64, input *expense.Input, response string) (string, error) {
 	var amount int64
 	var err error

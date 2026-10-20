@@ -1,4 +1,3 @@
-// Package llm extracts proposed expenses through Chat Completions tool calls.
 package llm
 
 import (
@@ -15,13 +14,11 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-// Client calls a configured provider. HTTP must have a finite timeout.
 type Client struct {
 	HTTP                 *resty.Client
 	Endpoint, Key, Model string
 }
 
-// Extract only proposes an expense. Identity and persistence are server responsibilities.
 func (c *Client) Extract(ctx context.Context, text string, now time.Time) (*expense.Input, error) {
 	properties := map[string]any{
 		"amount":   map[string]any{"type": "string", "description": "Positive amount in RUB, decimal string, up to two decimal places"},

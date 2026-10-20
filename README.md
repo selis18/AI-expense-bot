@@ -6,7 +6,7 @@
 
 A Telegram bot for tracking expenses. Given a message such as “кофе 350” (“coffee 350”), the model extracts the amount, category, and date. The application saves the expense in PostgreSQL.
 
-Currently, the bot supports adding one expense per message. Viewing, editing, deleting expenses, and the web panel are not implemented yet. The application has not been tested with live Telegram and LLM APIs.
+Currently, the bot supports adding one expense per message. The storage layer also has methods for listing, filtering, editing, deleting, and totaling expenses, with separate user and family access. These methods are not connected to the bot or REST routes yet; the web panel is not implemented. The application has not been tested with live Telegram and LLM APIs.
 
 ### Setup
 
@@ -55,6 +55,8 @@ go test -v ./internal/store
 
 The test creates a separate schema, checks migrations, repeated operations, and rollback on failure, then drops that schema. The connection must use a test database with `CREATE SCHEMA` permissions.
 
+Additional PostgreSQL tests cover access restrictions, partial updates, filters, pagination, and exact totals. They also require `TEST_DATABASE_URL` and have not been run against a database yet.
+
 ### Project structure
 
 The application uses Go, chi v5 for routing, Resty v2 for Telegram and LLM requests, and pgx v5 for PostgreSQL.
@@ -71,6 +73,8 @@ internal/telegram    receiving messages and sending replies
 
 The expense and bot response are saved in one transaction. Ownership comes from the sender's Telegram ID. Each message can create one expense. The Telegram event identifier (`update_id`) lets the application detect repeated processing and return the saved response.
 
+Expense queries use an explicit user or family scope. User-scoped reads and writes include the owner in their SQL conditions. Lists are ordered by expense date and ID, newest first, with 50 records per page by default and a maximum of 100. Totals are calculated in PostgreSQL and returned as integer strings in kopecks to avoid overflowing `int64`.
+
 ### Limitations
 
 - Messages from all users are processed sequentially. A failed reply delays subsequent messages.
@@ -82,7 +86,7 @@ The expense and bot response are saved in one transaction. Ownership comes from 
 
 Бот для учёта расходов в Telegram. Из сообщения «кофе 350» модель извлекает сумму, категорию и дату, а приложение сохраняет расход в PostgreSQL.
 
-Пока реализовано добавление одной траты за сообщение. Просмотр, изменение, удаление расходов и веб-панель ещё не готовы. Работа с реальными Telegram и LLM API пока не проверена.
+Бот пока поддерживает добавление одной траты за сообщение. В слое хранения также написаны операции просмотра, фильтрации, изменения, удаления и подсчёта расходов с отдельным доступом пользователя и всей семьи. К боту и REST-маршрутам эти операции ещё не подключены; веб-панели пока нет. Работа с реальными Telegram и LLM API не проверена.
 
 ### Запуск
 
@@ -131,6 +135,8 @@ go test -v ./internal/store
 
 Тест создаёт отдельную схему, проверяет миграцию, повтор операции и откат при ошибке, затем удаляет созданную схему. Подключение должно вести к тестовой БД с правами `CREATE SCHEMA`.
 
+Дополнительные тесты PostgreSQL проверяют ограничения доступа, частичное изменение, фильтры, пагинацию и точность сумм. Они также требуют `TEST_DATABASE_URL` и пока не запускались на БД.
+
 ### Структура
 
 Приложение написано на Go. Для маршрутизации используется chi v5, для запросов к Telegram и LLM — Resty v2, для PostgreSQL — pgx v5.
@@ -146,6 +152,8 @@ internal/telegram    получение сообщений и отправка �
 ```
 
 Расход и ответ бота сохраняются в одной транзакции. Владелец определяется по Telegram ID отправителя. Каждое сообщение может создать одну трату. По идентификатору события Telegram (`update_id`) приложение распознаёт повторную обработку и возвращает сохранённый ответ.
+
+Для операций с расходами явно выбирается доступ одного пользователя или всей семьи. SQL-запросы пользователя ограничены его ID. Список сортируется по дате расхода и ID по убыванию; размер страницы по умолчанию — 50, максимум — 100. PostgreSQL вычисляет суммы и возвращает их целочисленными строками в копейках, чтобы избежать переполнения `int64`.
 
 ### Ограничения
 

@@ -1,4 +1,3 @@
-// Package expense defines validation and monetary rules for family expenses.
 package expense
 
 import (
@@ -14,7 +13,6 @@ import (
 var moneyPattern = regexp.MustCompile(`^[0-9]+([.,][0-9]{1,2})?$`)
 var categories = map[string]bool{"еда": true, "транспорт": true, "жильё": true, "развлечения": true, "здоровье": true, "покупки": true, "другое": true}
 
-// Input describes a proposed expense. Amount is a decimal string in rubles.
 type Input struct {
 	Amount   string `json:"amount"`
 	Category string `json:"category"`
@@ -22,7 +20,6 @@ type Input struct {
 	Comment  string `json:"comment"`
 }
 
-// ParseAmount converts decimal rubles to kopecks without floating-point arithmetic.
 func ParseAmount(value string) (int64, error) {
 	if !moneyPattern.MatchString(value) {
 		return 0, errors.New("сумма должна быть положительным числом с максимум двумя знаками после запятой")
@@ -39,7 +36,6 @@ func ParseAmount(value string) (int64, error) {
 	return n, nil
 }
 
-// Validate checks the expense fields and returns the amount in kopecks.
 func (i Input) Validate() (int64, error) {
 	amount, err := ParseAmount(i.Amount)
 	if err != nil {
@@ -58,7 +54,6 @@ func (i Input) Validate() (int64, error) {
 	return amount, nil
 }
 
-// Confirmation formats a saved expense; amount must be expressed in kopecks.
 func Confirmation(i Input, amount int64) string {
 	return fmt.Sprintf("Добавил: %s — %d,%02d ₽, %s. %s", i.Category, amount/100, amount%100, i.SpentAt, i.Comment)
 }

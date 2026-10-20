@@ -1,4 +1,3 @@
-// Package telegram receives private messages through long polling.
 package telegram
 
 import (
@@ -13,12 +12,10 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-// Handler processes a message identified by its update ID and trusted sender ID.
 type Handler interface {
 	Handle(context.Context, int64, int64, string, string) (string, error)
 }
 
-// Bot connects Telegram to the dialog handler in a single application instance.
 type Bot struct {
 	Token   string
 	HTTP    *resty.Client
@@ -69,8 +66,6 @@ func (b *Bot) call(ctx context.Context, method string, payload any, out any) err
 	return nil
 }
 
-// Run intentionally processes updates sequentially in the single-instance MVP.
-// An offset is advanced only after a reply has been accepted by Telegram.
 func (b *Bot) Run(ctx context.Context) {
 	var offset int64
 	for ctx.Err() == nil {

@@ -12,7 +12,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Uses a separate schema; never drops application tables.
 func TestPostgresAtomicReplay(t *testing.T) {
 	url := os.Getenv("TEST_DATABASE_URL")
 	if url == "" {
@@ -78,7 +77,6 @@ func TestPostgresAtomicReplay(t *testing.T) {
 	if _, found, err := s.Result(ctx, 10, 43); err != nil || found {
 		t.Fatalf("other owner can see result: %v", err)
 	}
-	// Force the expense INSERT to fail after the update result INSERT.
 	if _, err = pool.Exec(ctx, "ALTER TABLE expenses ADD CONSTRAINT test_amount_limit CHECK(amount < 40000)"); err != nil {
 		t.Fatal(err)
 	}
