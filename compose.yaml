@@ -1,0 +1,42 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: expenses
+      POSTGRES_USER: expenses
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U expenses -d expenses"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  app:
+    build: .
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGDATABASE: expenses
+      PGUSER: expenses
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      PGSSLMODE: disable
+      HTTP_ADDR: :8080
+      FAMILY_TIMEZONE: ${FAMILY_TIMEZONE:-Asia/Yekaterinburg}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:?Set TELEGRAM_TOKEN in .env}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:?Set LLM_ENDPOINT in .env}
+      LLM_API_KEY: ${LLM_API_KEY:?Set LLM_API_KEY in .env}
+      LLM_MODEL: ${LLM_MODEL:?Set LLM_MODEL in .env}
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-30s}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, /app/expense-bot, -healthcheck]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+volumes:
+  postgres_data:

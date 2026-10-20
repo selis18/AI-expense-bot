@@ -1,0 +1,69 @@
+package dialog
+
+import (
+	"context"
+	"errors"
+	"testing"
+	"time"
+
+	"example.com/ai-expense-bot/internal/expense"
+)
+
+type fakeStore struct {
+	result string
+	owner  int64
+	writes int
+	fail   bool
+}
+
+func (s *fakeStore) Register(context.Context, int64, string) error { return nil }
+func (s *fakeStore) Result(_ context.Context, _ int64, user int64) (string, bool, error) {
+	return s.result, s.result != "" && s.owner == user, nil
+}
+func (s *fakeStore) Save(_ context.Context, _ int64, user int64, input *expense.Input, response string) (string, error) {
+	if s.fail {
+		return "", errors.New("database unavailable")
+	}
+	s.owner = user
+	s.writes++
+	if input != nil {
+		amount, err := input.Validate()
+		if err != nil {
+			return "", err
+		}
+		response = expense.Confirmation(*input, amount)
+	}
+	s.result = response
+	return response, nil
+}
+
+type fakeLLM struct{ calls int }
+
+func (m *fakeLLM) Extract(context.Context, string, time.Time) (*expense.Input, error) {
+	m.calls++
+	return &expense.Input{Amount: "350", Category: "еда", SpentAt: "2026-10-16", Comment: "кофе"}, nil
+}
+
+func TestReplayUsesSavedResult(t *testing.T) {
+	repo := &fakeStore{}
+	model := &fakeLLM{}
+	s := Service{Store: repo, LLM: model, Location: time.UTC}
+	first, err := s.Handle(context.Background(), 1, 42, "member", "кофе 350")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.Handle(context.Background(), 1, 42, "member", "кофе 350")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != second || repo.writes != 1 || model.calls != 1 || repo.owner != 42 {
+		t.Fatalf("replay changed operation: %+v, calls=%d", repo, model.calls)
+	}
+}
+func TestStorageFailureDoesNotConfirm(t *testing.T) {
+	s := Service{Store: &fakeStore{fail: true}, LLM: &fakeLLM{}, Location: time.UTC}
+	reply, err := s.Handle(context.Background(), 1, 42, "member", "кофе 350")
+	if err == nil || reply != "" {
+		t.Fatalf("confirmed failed operation: %q %v", reply, err)
+	}
+}
