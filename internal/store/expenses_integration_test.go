@@ -62,6 +62,10 @@ func TestPostgresExpenseAccess(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	users, err := store.ListUsers(ctx)
+	if err != nil || len(users) != 2 || users[0].ID != 42 || users[1].ID != 43 {
+		t.Fatalf("ListUsers() = %+v, %v; want users 42 and 43", users, err)
+	}
 	alice, err := store.UserExpenses(42)
 	if err != nil {
 		t.Fatal(err)
@@ -72,6 +76,9 @@ func TestPostgresExpenseAccess(t *testing.T) {
 	}
 	family := store.FamilyExpenses()
 	input := expense.Input{Amount: "350.50", Category: "еда", SpentAt: "2026-10-20", Comment: "кофе"}
+	if _, err := family.Create(ctx, 999, input); !errors.Is(err, expense.ErrUnknownUser) {
+		t.Fatalf("Create(unknown user) = %v; want ErrUnknownUser", err)
+	}
 	own, err := alice.Create(ctx, 42, input)
 	if err != nil {
 		t.Fatal(err)

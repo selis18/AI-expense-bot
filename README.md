@@ -6,7 +6,9 @@
 
 A Telegram bot for tracking expenses. Given a message such as “кофе 350” (“coffee 350”), the model extracts the amount, category, and date. The application saves the expense in PostgreSQL.
 
-Currently, the bot supports adding one expense per message. The storage layer also has methods for listing, filtering, editing, deleting, and totaling expenses, with separate user and family access. These methods are not connected to the bot or REST routes yet; the web panel is not implemented. The application has not been tested with live Telegram and LLM APIs.
+Currently, the bot supports adding one expense per message. The REST API supports listing, filtering, creating, editing, and deleting family expenses. The web panel and the remaining bot operations are not implemented. The application has not been tested with live Telegram and LLM APIs or a PostgreSQL database.
+
+See the [HTTP API reference](docs/api.md) for routes, request formats, and errors.
 
 ### Setup
 
@@ -66,6 +68,7 @@ cmd/expense-bot       startup, shutdown, and readiness checks
 internal/config      configuration
 internal/expense     amounts and expense validation
 internal/dialog      message handling and saved responses
+internal/httpapi     family panel routes and JSON validation
 internal/llm         model requests with the create_expense tool
 internal/store       PostgreSQL and the embedded migration
 internal/telegram    receiving messages and sending replies
@@ -86,7 +89,9 @@ Expense queries use an explicit user or family scope. User-scoped reads and writ
 
 Бот для учёта расходов в Telegram. Из сообщения «кофе 350» модель извлекает сумму, категорию и дату, а приложение сохраняет расход в PostgreSQL.
 
-Бот пока поддерживает добавление одной траты за сообщение. В слое хранения также написаны операции просмотра, фильтрации, изменения, удаления и подсчёта расходов с отдельным доступом пользователя и всей семьи. К боту и REST-маршрутам эти операции ещё не подключены; веб-панели пока нет. Работа с реальными Telegram и LLM API не проверена.
+Бот пока поддерживает добавление одной траты за сообщение. REST API позволяет просматривать, фильтровать, создавать, изменять и удалять расходы всей семьи. Веб-панель и остальные операции бота ещё не реализованы. Работа с реальными Telegram, LLM API и PostgreSQL не проверена.
+
+Маршруты, форматы запросов и ошибки описаны в [справочнике HTTP API](docs/api.md).
 
 ### Запуск
 
@@ -146,6 +151,7 @@ cmd/expense-bot       запуск, завершение и проверка г�
 internal/config      настройки
 internal/expense     суммы и проверка полей расхода
 internal/dialog      обработка сообщений и сохранённых ответов
+internal/httpapi     маршруты панели и проверка JSON
 internal/llm         запрос к модели с инструментом create_expense
 internal/store       PostgreSQL и встроенная миграция
 internal/telegram    получение сообщений и отправка ответов

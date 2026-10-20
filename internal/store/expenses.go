@@ -8,6 +8,7 @@ import (
 
 	"example.com/ai-expense-bot/internal/expense"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type Expenses struct {
@@ -91,7 +92,12 @@ func (r *Expenses) Create(ctx context.Context, ownerID int64, input expense.Inpu
 		VALUES ($1, $2, $3, $4::date, $5)
 		RETURNING `+expenseColumns,
 		ownerID, amount, input.Category, input.SpentAt, input.Comment)
-	return scanExpense(row)
+	record, err := scanExpense(row)
+	var databaseError *pgconn.PgError
+	if errors.As(err, &databaseError) && databaseError.Code == "23503" {
+		return expense.Record{}, expense.ErrUnknownUser
+	}
+	return record, err
 }
 
 func (r *Expenses) Get(ctx context.Context, id int64) (expense.Record, error) {

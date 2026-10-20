@@ -7,6 +7,12 @@ import (
 )
 
 var ErrNotFound = errors.New("expense not found")
+var ErrUnknownUser = errors.New("unknown user")
+
+type User struct {
+	ID          int64  `json:"id"`
+	DisplayName string `json:"display_name"`
+}
 
 type Record struct {
 	ID        int64

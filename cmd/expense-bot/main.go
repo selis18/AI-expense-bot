@@ -14,6 +14,7 @@ import (
 
 	"example.com/ai-expense-bot/internal/config"
 	"example.com/ai-expense-bot/internal/dialog"
+	"example.com/ai-expense-bot/internal/httpapi"
 	"example.com/ai-expense-bot/internal/llm"
 	"example.com/ai-expense-bot/internal/store"
 	"example.com/ai-expense-bot/internal/telegram"
@@ -70,6 +71,7 @@ func run() error {
 	service := &dialog.Service{Store: repo, LLM: model, Location: cfg.Location}
 	bot := &telegram.Bot{Token: cfg.TelegramToken, HTTP: resty.New().SetTimeout(40 * time.Second).SetRetryCount(0), Handler: service}
 	mux := chi.NewRouter()
+	mux.Mount("/api", httpapi.New(repo.FamilyExpenses(), repo))
 	mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
