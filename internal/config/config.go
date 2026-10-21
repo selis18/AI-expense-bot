@@ -5,18 +5,22 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"time"
 )
 
 type Config struct {
-	DatabaseURL   string
-	HTTPAddr      string
-	TelegramToken string
-	LLMEndpoint   string
-	LLMKey        string
-	LLMModel      string
-	Location      *time.Location
-	LLMTimeout    time.Duration
+	DatabaseURL     string
+	HTTPAddr        string
+	TelegramToken   string
+	LLMEndpoint     string
+	LLMKey          string
+	LLMModel        string
+	Location        *time.Location
+	LLMTimeout      time.Duration
+	BotEnabled      bool
+	WebDir          string
+	TelegramBaseURL string
 }
 
 func Load() (Config, error) {
@@ -28,13 +32,32 @@ func Load() (Config, error) {
 		LLMKey:        os.Getenv("LLM_API_KEY"),
 		LLMModel:      os.Getenv("LLM_MODEL"),
 	}
+	c.BotEnabled = true
+	c.TelegramBaseURL = os.Getenv("TELEGRAM_BASE_URL")
+	if c.TelegramBaseURL == "" {
+		c.TelegramBaseURL = "https://api.telegram.org"
+	}
+	if value := os.Getenv("BOT_ENABLED"); value != "" {
+		var err error
+		c.BotEnabled, err = strconv.ParseBool(value)
+		if err != nil {
+			return c, errors.New("invalid BOT_ENABLED")
+		}
+	}
+	c.WebDir = os.Getenv("WEB_DIR")
+	if c.WebDir == "" {
+		c.WebDir = "web/dist"
+	}
+	if c.LLMEndpoint == "" {
+		c.LLMEndpoint = "https://inference.waw0.amvera.ru/v1/chat/completions"
+	}
 	for key, value := range map[string]string{
 		"TELEGRAM_TOKEN": c.TelegramToken,
 		"LLM_ENDPOINT":   c.LLMEndpoint,
 		"LLM_API_KEY":    c.LLMKey,
 		"LLM_MODEL":      c.LLMModel,
 	} {
-		if value == "" {
+		if c.BotEnabled && value == "" {
 			return c, fmt.Errorf("required setting: %s", key)
 		}
 	}

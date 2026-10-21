@@ -15,6 +15,20 @@ type Expenses struct {
 	store  *Store
 	userID int64
 	family bool
+	tx     pgx.Tx
+}
+
+type database interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+}
+
+func (r *Expenses) database() database {
+	if r.tx != nil {
+		return r.tx
+	}
+	return r.store.Pool
 }
 
 func (s *Store) UserExpenses(userID int64) (*Expenses, error) {
@@ -87,7 +101,7 @@ func (r *Expenses) Create(ctx context.Context, ownerID int64, input expense.Inpu
 	if err != nil {
 		return expense.Record{}, err
 	}
-	row := r.store.Pool.QueryRow(ctx, `
+	row := r.database().QueryRow(ctx, `
 		INSERT INTO expenses(user_id, amount, category, spent_at, comment)
 		VALUES ($1, $2, $3, $4::date, $5)
 		RETURNING `+expenseColumns,
@@ -108,7 +122,7 @@ func (r *Expenses) Get(ctx context.Context, id int64) (expense.Record, error) {
 	args = append(args, id)
 	query := "SELECT " + expenseColumns + " FROM expenses WHERE " + where +
 		fmt.Sprintf(" AND id = $%d", len(args))
-	return scanExpense(r.store.Pool.QueryRow(ctx, query, args...))
+	return scanExpense(r.database().QueryRow(ctx, query, args...))
 }
 
 func (r *Expenses) List(ctx context.Context, filter expense.Filter, page expense.Page) ([]expense.Record, error) {
@@ -123,7 +137,7 @@ func (r *Expenses) List(ctx context.Context, filter expense.Filter, page expense
 	args = append(args, page.Limit, page.Offset)
 	query := "SELECT " + expenseColumns + " FROM expenses WHERE " + where +
 		fmt.Sprintf(" ORDER BY spent_at DESC, id DESC LIMIT $%d OFFSET $%d", len(args)-1, len(args))
-	rows, err := r.store.Pool.Query(ctx, query, args...)
+	rows, err := r.database().Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -172,7 +186,7 @@ func (r *Expenses) Update(ctx context.Context, id int64, patch expense.Patch) (e
 	args = append(args, id)
 	query := "UPDATE expenses SET " + strings.Join(assignments, ", ") +
 		" WHERE " + where + fmt.Sprintf(" AND id = $%d RETURNING ", len(args)) + expenseColumns
-	return scanExpense(r.store.Pool.QueryRow(ctx, query, args...))
+	return scanExpense(r.database().QueryRow(ctx, query, args...))
 }
 
 func (r *Expenses) Delete(ctx context.Context, id int64) error {
@@ -182,7 +196,7 @@ func (r *Expenses) Delete(ctx context.Context, id int64) error {
 	}
 	args = append(args, id)
 	query := "DELETE FROM expenses WHERE " + where + fmt.Sprintf(" AND id = $%d", len(args))
-	result, err := r.store.Pool.Exec(ctx, query, args...)
+	result, err := r.database().Exec(ctx, query, args...)
 	if err != nil {
 		return err
 	}
@@ -201,7 +215,7 @@ func (r *Expenses) Summarize(ctx context.Context, filter expense.Filter) (expens
 		SELECT COALESCE(category, ''), count(*), COALESCE(sum(amount), 0)::text
 		FROM expenses WHERE ` + where + `
 		GROUP BY GROUPING SETS ((category), ())`
-	rows, err := r.store.Pool.Query(ctx, query, args...)
+	rows, err := r.database().Query(ctx, query, args...)
 	if err != nil {
 		return expense.Summary{}, err
 	}

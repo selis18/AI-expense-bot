@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -28,7 +29,15 @@ func main() {
 	flag.Parse()
 	if *health {
 		c := resty.New().SetTimeout(3 * time.Second).SetRetryCount(0)
-		res, err := c.R().Get("http://127.0.0.1:8080/readyz")
+		address := os.Getenv("HTTP_ADDR")
+		if address == "" {
+			address = ":8080"
+		}
+		_, port, err := net.SplitHostPort(address)
+		if err != nil {
+			os.Exit(1)
+		}
+		res, err := c.R().Get("http://127.0.0.1:" + port + "/readyz")
 		if err != nil {
 			os.Exit(1)
 		}
@@ -69,9 +78,10 @@ func run() error {
 	}
 	model := &llm.Client{HTTP: resty.New().SetTimeout(cfg.LLMTimeout).SetRetryCount(0), Endpoint: cfg.LLMEndpoint, Key: cfg.LLMKey, Model: cfg.LLMModel}
 	service := &dialog.Service{Store: repo, LLM: model, Location: cfg.Location}
-	bot := &telegram.Bot{Token: cfg.TelegramToken, HTTP: resty.New().SetTimeout(40 * time.Second).SetRetryCount(0), Handler: service}
+	bot := &telegram.Bot{Token: cfg.TelegramToken, HTTP: resty.New().SetTimeout(40 * time.Second).SetRetryCount(0), Handler: service, APIBaseURL: cfg.TelegramBaseURL}
 	mux := chi.NewRouter()
 	mux.Mount("/api", httpapi.New(repo.FamilyExpenses(), repo))
+	mux.Handle("/*", http.FileServer(http.Dir(cfg.WebDir)))
 	mux.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.Get("/readyz", func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
@@ -84,7 +94,12 @@ func run() error {
 	})
 	server := &http.Server{Addr: cfg.HTTPAddr, Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	botDone := make(chan struct{})
-	go func() { defer close(botDone); bot.Run(ctx) }()
+	go func() {
+		defer close(botDone)
+		if cfg.BotEnabled {
+			bot.Run(ctx)
+		}
+	}()
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.ListenAndServe() }()
 	slog.Info("application started", "address", cfg.HTTPAddr)

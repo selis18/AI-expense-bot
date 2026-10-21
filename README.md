@@ -1,169 +1,131 @@
 # AI Expense Bot
 
-[English](#english) | [Русский](#русский)
-
 ## English
 
-A Telegram bot for tracking expenses. Given a message such as “кофе 350” (“coffee 350”), the model extracts the amount, category, and date. The application saves the expense in PostgreSQL.
+Family expense tracking through Telegram and a web panel. The bot understands requests such as “кофе 350” (coffee, 350 rubles), records expenses, finds previous purchases, calculates totals, and handles edits and deletion. Each Telegram user can access only their own expenses. The panel manages expenses for all family members.
 
-Currently, the bot supports adding one expense per message. The REST API supports listing, filtering, creating, editing, and deleting family expenses. The web panel and the remaining bot operations are not implemented. The application has not been tested with live Telegram and LLM APIs or a PostgreSQL database.
+Built with Go, chi, Resty, PostgreSQL, React, and TypeScript. The model chooses from five tools; the server validates arguments, enforces ownership, and calculates totals in SQL. Amounts are stored as integer kopecks and exchanged as decimal strings in rubles.
 
-See the [HTTP API reference](docs/api.md) for routes, request formats, and errors.
-
-### Setup
-
-You need Docker Compose, a Telegram bot token, and access to an LLM API that supports Chat Completions tool calls.
+### Run
 
 1. Copy `.env.example` to `.env`.
-2. Set `TELEGRAM_TOKEN`, `LLM_ENDPOINT`, `LLM_API_KEY`, and `LLM_MODEL`.
-3. Check `FAMILY_TIMEZONE` and the PostgreSQL password.
-4. Run:
+2. Set `POSTGRES_PASSWORD`, `TELEGRAM_TOKEN`, `LLM_API_KEY`, and `LLM_MODEL`. Check `FAMILY_TIMEZONE`.
+3. Start the application:
 
 ```sh
 docker compose up --build
 ```
 
-Set `LLM_ENDPOINT` to the full Chat Completions URL. The API must support `tools` and `tool_choice: auto`. The Amvera connection has not been tested yet.
+Open [localhost:8080](http://localhost:8080). Compose builds the panel into the application image, runs database migrations, and keeps PostgreSQL data in a volume. The panel has no authentication and is exposed on localhost. Users appear in the panel after writing to the bot.
 
-Compose passes database settings through `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`. Use `DATABASE_URL` when running the application outside a container. The PostgreSQL port is accessible only within the Compose network.
+Set `BOT_ENABLED=false` to run the panel and API without Telegram or LLM credentials. A fresh database has no users; this mode does not create demonstration data.
 
-Readiness URL: `http://localhost:8080/readyz`. The `/healthz` route checks the HTTP server; `/readyz` checks the database connection. Neither checks Telegram or LLM availability.
+The default LLM endpoint is `https://inference.waw0.amvera.ru/v1/chat/completions`. Set `LLM_MODEL` to an available model that supports Chat Completions `tools` and `tool_choice: auto`. Model availability and tool support must be checked with your Amvera account; the DeepSeek R1 integration has not been verified. See [Amvera inference documentation](https://docs.amvera.ru/LLM/doc-inference-ru.html).
 
-Open a private chat with the bot and send `кофе 350`. Each message must include a description and an amount. Group messages and follow-up clarifications are not supported yet.
+### Usage
 
-To inspect saved expenses:
+Write to the bot in a private chat:
 
-```sh
-docker compose exec postgres psql -U expenses -d expenses -c "SELECT id,user_id,amount,category,spent_at,comment FROM expenses ORDER BY id;"
-```
+- `кофе 350`
+- `такси 1200 вчера`
+- `покажи траты за неделю`
+- `сколько потратил на еду в этом месяце`
+- `последнее было не 350, а 450`
+- `удали такси`
 
-The database stores `amount` in kopecks: 350 rubles is saved as 35000. The model passes amounts as decimal strings in rubles, such as `"350.50"`. Conversion does not use floating-point arithmetic.
+Missing details lead to a clarification question. The last six exchanges within 30 minutes are available to the model. If several expenses match an edit or deletion, reply with a number from the list. A selected expense remains available for 10 minutes. Deletion requires a separate `да` reply; `нет` or `отмена` cancels it. A changed expense requires confirmation again.
+
+The panel provides participant, date, and category filters, totals, pagination, creation, editing, and deletion. A new expense belongs to an existing participant; editing does not change its owner. Dates entered in the panel are calendar dates; the form initially uses the browser's current date. The bot resolves relative dates using `FAMILY_TIMEZONE`.
+
+[HTTP API reference](docs/api.md)
+
+### Configuration
+
+| Variable | Purpose / default |
+| --- | --- |
+| `POSTGRES_PASSWORD` | Database password in Compose |
+| `DATABASE_URL` | PostgreSQL connection for a local Go process |
+| `BOT_ENABLED` | `true`; set `false` for panel-only mode |
+| `TELEGRAM_TOKEN` | Bot token |
+| `LLM_ENDPOINT` | Full Chat Completions URL; Amvera by default |
+| `LLM_API_KEY`, `LLM_MODEL` | Provider key and model ID |
+| `LLM_TIMEOUT` | Timeout per model request, `30s`, maximum `2m` |
+| `FAMILY_TIMEZONE` | `Asia/Yekaterinburg` |
+| `HTTP_ADDR` | `:8080`; Compose uses a fixed internal port |
+| `WEB_DIR` | Built panel directory, `web/dist` |
+
+The Go process reads environment variables; it does not load `.env`. Compose reads `.env` and supplies PostgreSQL connection settings through `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, and `PGPASSWORD`.
+
+`/healthz` checks the HTTP server. `/readyz` checks the database. Neither checks external APIs.
 
 ### Development and tests
 
-Go 1.26.5 or later is required. The application reads environment variables; it does not load `.env` itself. Compose loads that file.
+Use Go 1.26.5+, Node.js 24, pnpm 11.25.0, and PostgreSQL 17.
 
 ```sh
+cd web
+pnpm install --frozen-lockfile --ignore-scripts
+pnpm build
+cd ..
 go test ./...
 go vet ./...
-go build ./cmd/expense-bot
+go build -o bin/expense-bot ./cmd/expense-bot
 ```
 
-The PostgreSQL test is skipped unless `TEST_DATABASE_URL` is set. Set it to a test database connection string, then run:
+Set `DATABASE_URL` and the other application variables before running the binary. For frontend development, `pnpm dev` in `web` proxies `/api` to the Go server on port 8080.
+
+Set `TEST_DATABASE_URL` to a test database and rerun `go test -count=1 ./...` to include database tests. They create and remove isolated schemas and require `CREATE SCHEMA` permission. Without this variable, database tests are skipped.
+
+For browser tests, run the application against a separate test database with at least one user. Then run in `web`:
 
 ```sh
-go test -v ./internal/store
+pnpm exec playwright install chromium
+pnpm test
 ```
 
-The test creates a separate schema, checks migrations, repeated operations, and rollback on failure, then drops that schema. The connection must use a test database with `CREATE SCHEMA` permissions.
+`PANEL_URL` overrides `http://127.0.0.1:8080`. `BROWSER_CHANNEL=msedge` uses installed Edge. Browser tests create, edit, and delete their own expense. They also test filtering and recovery from a failed request.
 
-Additional PostgreSQL tests cover access restrictions, partial updates, filters, pagination, and exact totals. They also require `TEST_DATABASE_URL` and have not been run against a database yet.
+Local verification passed: Go tests including PostgreSQL integration tests, `go vet`, backend and frontend builds, and browser tests against the real API. HTTP test servers exercise LLM responses and Telegram failures. CI is configured to repeat tests and check Compose startup and data persistence. CI and the Docker build have not been run in this environment; live Telegram and Amvera calls still require credentials.
 
-### Project structure
+### Design and limits
 
-The application uses Go, chi v5 for routing, Resty v2 for Telegram and LLM requests, and pgx v5 for PostgreSQL.
+`internal/expense` contains validation and action types; `store` owns SQL, migrations, and saved dialogue state; `dialog` handles messages; `llm` and `telegram` use Resty; `httpapi` serves the panel API through chi. `web` contains the React panel.
 
-```text
-cmd/expense-bot       startup, shutdown, and readiness checks
-internal/config      configuration
-internal/expense     amounts and expense validation
-internal/dialog      message handling and saved responses
-internal/httpapi     family panel routes and JSON validation
-internal/llm         model requests with the create_expense tool
-internal/store       PostgreSQL and the embedded migration
-internal/telegram    receiving messages and sending replies
-```
+An operation and its reply are committed together with the Telegram update ID. Reprocessing returns the saved reply without repeating the expense operation. History is recorded afterwards and can be recovered when the update is retried. Delete confirmation stores a snapshot and checks it under a database lock.
 
-The expense and bot response are saved in one transaction. Ownership comes from the sender's Telegram ID. Each message can create one expense. The Telegram event identifier (`update_id`) lets the application detect repeated processing and return the saved response.
-
-Expense queries use an explicit user or family scope. User-scoped reads and writes include the owner in their SQL conditions. Lists are ordered by expense date and ID, newest first, with 50 records per page by default and a maximum of 100. Totals are calculated in PostgreSQL and returned as integer strings in kopecks to avoid overflowing `int64`.
-
-### Limitations
-
-- Messages from all users are processed sequentially. A failed reply delays subsequent messages.
-- A reply may be sent again after a failure. Saving `update_id` in the same transaction prevents duplicate expenses.
-- The model receives only the current message, without conversation history.
-- The container build, PostgreSQL migration, and complete flow from message to database record have not been verified yet. The database test requires `TEST_DATABASE_URL`; LLM tests use a local HTTP server.
+The application serves one family, uses rubles, and processes Telegram messages sequentially. One message can execute one tool, with one correction attempt for invalid arguments. Bot lists show up to ten expenses. Temporary sending failures delay subsequent updates; permanent recipient errors are skipped. After a network failure a reply can be delivered twice, but the expense operation is not repeated. Run only one polling instance per bot token. Kafka and RAG are not used for this scope.
 
 ## Русский
 
-Бот для учёта расходов в Telegram. Из сообщения «кофе 350» модель извлекает сумму, категорию и дату, а приложение сохраняет расход в PostgreSQL.
+Учёт семейных расходов через Telegram и веб-панель. Бот добавляет, ищет, считает, изменяет и удаляет траты по обычным сообщениям. В Telegram доступны только собственные расходы; в панели — расходы всех участников.
 
-Бот пока поддерживает добавление одной траты за сообщение. REST API позволяет просматривать, фильтровать, создавать, изменять и удалять расходы всей семьи. Веб-панель и остальные операции бота ещё не реализованы. Работа с реальными Telegram, LLM API и PostgreSQL не проверена.
-
-Маршруты, форматы запросов и ошибки описаны в [справочнике HTTP API](docs/api.md).
+Стек: Go, chi, Resty, PostgreSQL, React и TypeScript. Модель выбирает один из пяти инструментов. Проверку аргументов и владельца выполняет сервер, суммы считает PostgreSQL. В БД деньги хранятся целыми копейками, в API передаются строками в рублях.
 
 ### Запуск
 
-Нужны Docker Compose, токен Telegram-бота и доступ к LLM API с поддержкой вызова инструментов в формате Chat Completions.
-
 1. Скопировать `.env.example` в `.env`.
-2. Заполнить `TELEGRAM_TOKEN`, `LLM_ENDPOINT`, `LLM_API_KEY`, `LLM_MODEL`.
-3. Проверить часовой пояс `FAMILY_TIMEZONE` и пароль PostgreSQL.
-4. Выполнить:
+2. Заполнить `POSTGRES_PASSWORD`, `TELEGRAM_TOKEN`, `LLM_API_KEY`, `LLM_MODEL`. Проверить `FAMILY_TIMEZONE`.
+3. Выполнить `docker compose up --build`.
+4. Открыть [localhost:8080](http://localhost:8080).
 
-```sh
-docker compose up --build
-```
+Compose собирает панель вместе с Go-приложением, запускает миграции и хранит БД в отдельном томе. Панель без авторизации, порт доступен на localhost. Участники появляются после первого сообщения боту.
 
-В `LLM_ENDPOINT` указывается полный URL метода Chat Completions. API должен поддерживать `tools` и `tool_choice: auto`. Подключение через Amvera ещё не проверено.
+`BOT_ENABLED=false` запускает только панель и API без ключей внешних сервисов. На пустой БД участников нет; демонстрационные записи автоматически не создаются.
 
-Compose передаёт настройки БД через переменные `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER` и `PGPASSWORD`. `DATABASE_URL` нужен для запуска приложения вне контейнера. Порт PostgreSQL доступен только внутри сети Compose.
+По умолчанию используется `https://inference.waw0.amvera.ru/v1/chat/completions`. В `LLM_MODEL` нужен доступный в аккаунте идентификатор модели с поддержкой `tools` и `tool_choice: auto`. Работа DeepSeek R1 через Amvera пока не проверена. [Документация Amvera](https://docs.amvera.ru/LLM/doc-inference-ru.html).
 
-Адрес проверки готовности: `http://localhost:8080/readyz`. Маршрут `/healthz` проверяет работу HTTP-сервера, `/readyz` — соединение с БД. Доступность Telegram и LLM они не проверяют.
+### Работа с расходами
 
-Открыть личный чат с ботом и отправить `кофе 350`. Каждое сообщение должно содержать описание и сумму. Групповые сообщения и уточнения в следующих репликах пока не поддерживаются.
+Примеры: `кофе 350`, `такси 1200 вчера`, `покажи траты за неделю`, `сколько потратил на еду в этом месяце`, `последнее было не 350, а 450`, `удали такси`.
 
-Для просмотра записей:
+Бот уточняет недостающие сведения и получает последние шесть обменов сообщениями за 30 минут. При нескольких совпадениях можно выбрать номер из списка. Выбор хранится 10 минут. Удаление требует отдельного `да`; `нет` или `отмена` отменяет действие. Если запись успела измениться, подтверждение запрашивается заново.
 
-```sh
-docker compose exec postgres psql -U expenses -d expenses -c "SELECT id,user_id,amount,category,spent_at,comment FROM expenses ORDER BY id;"
-```
+В панели есть фильтры по участнику, датам и категории, суммы, страницы списка и полный CRUD. Создать трату можно для существующего участника; сменить владельца при редактировании нельзя. Начальная дата формы берётся из браузера. Относительные даты бота вычисляются в `FAMILY_TIMEZONE`.
 
-Поле `amount` в БД хранит копейки: 350 рублей сохраняется как 35000. Модель передаёт сумму строкой в рублях, например `"350.50"`. Преобразование выполняется без чисел с плавающей точкой.
+### Проверки и ограничения
 
-### Разработка и тесты
+Команды разработки, таблица настроек и запуск браузерных тестов приведены выше. Приложение читает переменные окружения; `.env` самостоятельно не загружает. Для тестов PostgreSQL нужен `TEST_DATABASE_URL` с правами на создание схем. Без него эти тесты пропускаются.
 
-Нужен Go 1.26.5 или новее. Приложение читает переменные окружения; само `.env` не загружает (его читает Compose).
+Локально прошли тесты Go с настоящей PostgreSQL, `go vet`, сборка сервера и панели, браузерные проверки CRUD, фильтров и обработки ошибки. LLM и Telegram проверены через локальные HTTP-серверы. Добавлены CI-проверки, включая запуск Compose и сохранение данных после перезапуска. CI и Docker в текущем окружении не запускались; реальные вызовы Telegram и Amvera требуют ключей.
 
-```sh
-go test ./...
-go vet ./...
-go build ./cmd/expense-bot
-```
-
-Тест PostgreSQL пропускается без `TEST_DATABASE_URL`. Для запуска указать строку подключения к тестовой БД в окружении и выполнить:
-
-```sh
-go test -v ./internal/store
-```
-
-Тест создаёт отдельную схему, проверяет миграцию, повтор операции и откат при ошибке, затем удаляет созданную схему. Подключение должно вести к тестовой БД с правами `CREATE SCHEMA`.
-
-Дополнительные тесты PostgreSQL проверяют ограничения доступа, частичное изменение, фильтры, пагинацию и точность сумм. Они также требуют `TEST_DATABASE_URL` и пока не запускались на БД.
-
-### Структура
-
-Приложение написано на Go. Для маршрутизации используется chi v5, для запросов к Telegram и LLM — Resty v2, для PostgreSQL — pgx v5.
-
-```text
-cmd/expense-bot       запуск, завершение и проверка готовности
-internal/config      настройки
-internal/expense     суммы и проверка полей расхода
-internal/dialog      обработка сообщений и сохранённых ответов
-internal/httpapi     маршруты панели и проверка JSON
-internal/llm         запрос к модели с инструментом create_expense
-internal/store       PostgreSQL и встроенная миграция
-internal/telegram    получение сообщений и отправка ответов
-```
-
-Расход и ответ бота сохраняются в одной транзакции. Владелец определяется по Telegram ID отправителя. Каждое сообщение может создать одну трату. По идентификатору события Telegram (`update_id`) приложение распознаёт повторную обработку и возвращает сохранённый ответ.
-
-Для операций с расходами явно выбирается доступ одного пользователя или всей семьи. SQL-запросы пользователя ограничены его ID. Список сортируется по дате расхода и ID по убыванию; размер страницы по умолчанию — 50, максимум — 100. PostgreSQL вычисляет суммы и возвращает их целочисленными строками в копейках, чтобы избежать переполнения `int64`.
-
-### Ограничения
-
-- Сообщения всех пользователей обрабатываются последовательно. Ошибка отправки ответа задерживает обработку следующих сообщений.
-- После сбоя бот может отправить ответ повторно. Повторное создание траты предотвращается записью `update_id` в той же транзакции.
-- Модель получает только текущее сообщение, без истории переписки.
-- Сборка контейнера, миграция на PostgreSQL и полный путь от сообщения до записи в БД пока не проверены. Тест БД требует `TEST_DATABASE_URL`; тесты LLM используют локальный HTTP-сервер.
+Одна семья, одна валюта — рубли. Сообщения Telegram обрабатываются последовательно, один инструмент на сообщение. При неверных аргументах есть одна попытка исправления. Список бота ограничен десятью записями. Временная ошибка отправки задерживает следующие сообщения; постоянный отказ получателя пропускается. После сетевого сбоя ответ может прийти повторно, но операция с расходом не повторяется. Для одного токена нужен один процесс polling. Kafka и RAG в этом объёме не используются.

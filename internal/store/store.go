@@ -13,6 +13,9 @@ import (
 //go:embed schema.sql
 var schema string
 
+//go:embed migration_2.sql
+var migration2 string
+
 type Store struct{ Pool *pgxpool.Pool }
 
 func (s *Store) Migrate(ctx context.Context) error {
@@ -33,6 +36,14 @@ func (s *Store) Migrate(ctx context.Context) error {
 	}
 	if !exists {
 		if _, err = tx.Exec(ctx, schema); err != nil {
+			return err
+		}
+	}
+	if err = tx.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM schema_migrations WHERE version=2)").Scan(&exists); err != nil {
+		return err
+	}
+	if !exists {
+		if _, err = tx.Exec(ctx, migration2); err != nil {
 			return err
 		}
 	}

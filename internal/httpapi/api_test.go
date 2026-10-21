@@ -24,6 +24,10 @@ type fakeStore struct {
 	err    error
 }
 
+func (s *fakeStore) Summarize(context.Context, expense.Filter) (expense.Summary, error) {
+	return expense.Summary{Total: "35050", Count: 1, ByCategory: map[string]string{"еда": "35050"}}, s.err
+}
+
 func (s *fakeStore) Create(_ context.Context, userID int64, input expense.Input) (expense.Record, error) {
 	s.calls++
 	if s.err != nil {

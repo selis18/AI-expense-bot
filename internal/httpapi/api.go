@@ -23,6 +23,7 @@ type Expenses interface {
 	List(context.Context, expense.Filter, expense.Page) ([]expense.Record, error)
 	Update(context.Context, int64, expense.Patch) (expense.Record, error)
 	Delete(context.Context, int64) error
+	Summarize(context.Context, expense.Filter) (expense.Summary, error)
 }
 
 type Users interface {
@@ -39,6 +40,7 @@ func New(expenses Expenses, users Users) http.Handler {
 	router := chi.NewRouter()
 	router.Get("/users", api.listUsers)
 	router.Get("/expenses", api.listExpenses)
+	router.Get("/expenses/summary", api.summary)
 	router.Post("/expenses", api.createExpense)
 	router.Get("/expenses/{id}", api.getExpense)
 	router.Patch("/expenses/{id}", api.updateExpense)
@@ -50,6 +52,20 @@ func New(expenses Expenses, users Users) http.Handler {
 		writeError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed")
 	})
 	return router
+}
+
+func (a *API) summary(w http.ResponseWriter, r *http.Request) {
+	filter, _, err := parseQuery(r)
+	if err != nil {
+		writeError(w, 400, "invalid_query", err.Error())
+		return
+	}
+	summary, err := a.expenses.Summarize(r.Context(), filter)
+	if err != nil {
+		writeStorageError(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"count": summary.Count, "total_kopecks": summary.Total, "by_category_kopecks": summary.ByCategory})
 }
 
 type expenseResponse struct {

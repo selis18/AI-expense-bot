@@ -12,7 +12,7 @@ import (
 	"github.com/go-resty/resty/v2"
 )
 
-func TestExtractBoundary(t *testing.T) {
+func TestSelectBoundary(t *testing.T) {
 	for _, tc := range []struct {
 		name, args, finish string
 		status             int
@@ -41,11 +41,11 @@ func TestExtractBoundary(t *testing.T) {
 			}))
 			defer server.Close()
 			c := Client{HTTP: resty.NewWithClient(server.Client()), Endpoint: server.URL, Key: "test-key", Model: "test"}
-			got, err := c.Extract(context.Background(), "кофе 350", time.Now())
+			got, err := c.Select(context.Background(), "кофе 350", time.Now())
 			if (err != nil) != tc.wantError {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !tc.wantError && (got == nil || got.Amount != "350") {
+			if !tc.wantError && (got == nil || got.Input.Amount != "350") {
 				t.Fatalf("unexpected expense: %+v", got)
 			}
 		})

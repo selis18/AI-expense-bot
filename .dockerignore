@@ -3,3 +3,12 @@
 .env.*
 bin
 node_modules
+.local
+web/node_modules
+web/dist
+web/test-results
+web/playwright-report
+TECHNICAL_VISION.md
+KANBAN.md
+GO_STYLE.md
+test-task-expenses.md

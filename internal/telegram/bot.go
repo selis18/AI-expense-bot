@@ -17,10 +17,19 @@ type Handler interface {
 }
 
 type Bot struct {
-	Token   string
-	HTTP    *resty.Client
-	Handler Handler
+	Token      string
+	HTTP       *resty.Client
+	Handler    Handler
+	APIBaseURL string
 }
+
+type apiError struct {
+	Status     int
+	RetryAfter time.Duration
+}
+
+func (e *apiError) Error() string { return fmt.Sprintf("Telegram status %d", e.Status) }
+
 type update struct {
 	ID      int64 `json:"update_id"`
 	Message *struct {
@@ -38,27 +47,39 @@ type update struct {
 }
 
 func (b *Bot) call(ctx context.Context, method string, payload any, out any) error {
+	base := b.APIBaseURL
+	if base == "" {
+		base = "https://api.telegram.org"
+	}
 	response, err := b.HTTP.R().SetContext(ctx).
 		SetHeader("Content-Type", "application/json").
 		SetBody(payload).
 		SetDoNotParseResponse(true).
-		Post("https://api.telegram.org/bot" + b.Token + "/" + method)
+		Post(base + "/bot" + b.Token + "/" + method)
 	if err != nil {
 		return errors.New("Telegram unavailable")
 	}
 	defer response.RawBody().Close()
-	if response.StatusCode() != 200 {
-		return fmt.Errorf("Telegram status %d", response.StatusCode())
-	}
 	var envelope struct {
-		OK     bool            `json:"ok"`
-		Result json.RawMessage `json:"result"`
+		OK         bool            `json:"ok"`
+		Result     json.RawMessage `json:"result"`
+		ErrorCode  int             `json:"error_code"`
+		Parameters struct {
+			RetryAfter int `json:"retry_after"`
+		} `json:"parameters"`
 	}
 	if err = json.NewDecoder(io.LimitReader(response.RawBody(), 2<<20)).Decode(&envelope); err != nil {
+		if response.StatusCode() != 200 {
+			return &apiError{Status: response.StatusCode()}
+		}
 		return errors.New("invalid Telegram response")
 	}
-	if !envelope.OK {
-		return errors.New("Telegram operation rejected")
+	if response.StatusCode() != 200 || !envelope.OK {
+		status := response.StatusCode()
+		if envelope.ErrorCode != 0 {
+			status = envelope.ErrorCode
+		}
+		return &apiError{Status: status, RetryAfter: time.Duration(envelope.Parameters.RetryAfter) * time.Second}
 	}
 	if out != nil {
 		return json.Unmarshal(envelope.Result, out)
@@ -73,7 +94,7 @@ func (b *Bot) Run(ctx context.Context) {
 		err := b.call(ctx, "getUpdates", map[string]any{"offset": offset, "timeout": 25, "allowed_updates": []string{"message"}}, &updates)
 		if err != nil {
 			slog.Warn("telegram polling failed")
-			if !pause(ctx) {
+			if !waitRetry(ctx, err) {
 				return
 			}
 			continue
@@ -86,13 +107,20 @@ func (b *Bot) Run(ctx context.Context) {
 			}
 			actionCtx, cancel := context.WithTimeout(ctx, 3*time.Minute)
 			reply, err := b.Handler.Handle(actionCtx, u.ID, m.From.ID, m.From.FirstName, m.Text)
+			sending := err == nil
 			if err == nil {
 				err = b.call(actionCtx, "sendMessage", map[string]any{"chat_id": m.Chat.ID, "text": reply}, nil)
 			}
 			cancel()
+			var rejected *apiError
+			if sending && errors.As(err, &rejected) && (rejected.Status == 400 || rejected.Status == 403 || rejected.Status == 404) {
+				slog.Warn("telegram reply rejected", "update_id", u.ID, "status", rejected.Status)
+				offset = u.ID + 1
+				continue
+			}
 			if err != nil {
 				slog.Warn("telegram update pending retry", "update_id", u.ID)
-				if !pause(ctx) {
+				if !waitRetry(ctx, err) {
 					return
 				}
 				break
@@ -102,11 +130,16 @@ func (b *Bot) Run(ctx context.Context) {
 	}
 }
 
-func pause(ctx context.Context) bool {
+func waitRetry(ctx context.Context, err error) bool {
+	delay := 3 * time.Second
+	var responseError *apiError
+	if errors.As(err, &responseError) && responseError.RetryAfter > delay {
+		delay = responseError.RetryAfter
+	}
 	select {
 	case <-ctx.Done():
 		return false
-	case <-time.After(3 * time.Second):
+	case <-time.After(delay):
 		return true
 	}
 }

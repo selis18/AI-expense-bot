@@ -12,6 +12,7 @@ Amounts are decimal strings in rubles in requests and responses, for example `"3
 | --- | --- | --- |
 | GET | `/api/users` | `200`, list of known Telegram users |
 | GET | `/api/expenses` | `200`, filtered page |
+| GET | `/api/expenses/summary` | `200`, count and totals for all matching records |
 | GET | `/api/expenses/{id}` | `200`, one expense |
 | POST | `/api/expenses` | `201`, saved expense and `Location` header |
 | PATCH | `/api/expenses/{id}` | `200`, updated expense |
@@ -63,6 +64,16 @@ Unknown or repeated parameters are rejected. Results are ordered by `spent_at DE
 ```
 
 An empty list has `"items": []`. The response does not include a total count.
+
+## Totals
+
+`GET /api/expenses/summary` accepts the same filters as the list. Pagination does not affect the totals. PostgreSQL calculates the sums; integer strings in kopecks preserve precision even when the sum exceeds a signed 64-bit integer.
+
+```json
+{"count": 2, "total_kopecks": "70050", "by_category_kopecks": {"еда": "70050"}}
+```
+
+No matches returns count `0`, total `"0"`, and an empty category object.
 
 ## Create an expense
 

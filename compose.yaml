@@ -23,16 +23,18 @@ services:
       PGSSLMODE: disable
       HTTP_ADDR: :8080
       FAMILY_TIMEZONE: ${FAMILY_TIMEZONE:-Asia/Yekaterinburg}
-      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:?Set TELEGRAM_TOKEN in .env}
-      LLM_ENDPOINT: ${LLM_ENDPOINT:?Set LLM_ENDPOINT in .env}
-      LLM_API_KEY: ${LLM_API_KEY:?Set LLM_API_KEY in .env}
-      LLM_MODEL: ${LLM_MODEL:?Set LLM_MODEL in .env}
+      BOT_ENABLED: ${BOT_ENABLED:-true}
+      TELEGRAM_TOKEN: ${TELEGRAM_TOKEN:-}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-https://inference.waw0.amvera.ru/v1/chat/completions}
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_MODEL: ${LLM_MODEL:-}
       LLM_TIMEOUT: ${LLM_TIMEOUT:-30s}
     ports:
       - "127.0.0.1:8080:8080"
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
     healthcheck:
       test: [CMD, /app/expense-bot, -healthcheck]
       interval: 10s

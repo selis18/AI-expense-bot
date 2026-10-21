@@ -6,6 +6,10 @@ coverage.out
 *.exe
 node_modules/
 dist/
+.local/
+web/.vite/
+web/test-results/
+web/playwright-report/
 
 # Local planning notes and task brief
 /TECHNICAL_VISION.md
